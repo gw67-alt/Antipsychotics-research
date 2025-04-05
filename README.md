@@ -1,1 +1,1 @@
-requires precision automatic classification.
+requires more precise automatic classification.
