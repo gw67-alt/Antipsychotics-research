@@ -1,227 +1,268 @@
-# Make sure to install librosa and scikit-learn:
-# pip install librosa scikit-learn
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.signal as signal
-import sys # To exit gracefully if libraries are not found
-import random # For sampling words
+import scipy.signal
+import sys
+import random
+import json
 
-# --- Library Import Checks ---
+# Library import checks
 try:
     import librosa
-    import librosa.display # For potential future visualization
 except ImportError:
-    print("Error: librosa library not found.")
-    print("Please install it using: pip install librosa")
+    print("Error: librosa library not found. Please install using: pip install librosa")
     sys.exit(1)
 
 try:
-    from sklearn.cluster import KMeans
-    from sklearn.preprocessing import StandardScaler # Optional but recommended
+    from sklearn.cluster import KMeans, DBSCAN
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+    from sklearn.metrics import silhouette_score
 except ImportError:
-    print("Error: scikit-learn library not found.")
-    print("Please install it using: pip install scikit-learn")
+    print("Error: scikit-learn library not found. Please install using: pip install scikit-learn")
     sys.exit(1)
-# ---------------------------
 
-# --- Signal Generation Functions (Unchanged) ---
-def generate_signal(letter):
-    """
-    Generate a basic signal for a single letter.
-    Returns the signal data and the sample rate used.
-    """
-    # Basic parameters
-    sample_rate = 4410  # Reduced sample rate
-    duration = 0.5  # Half a second per letter
-    t = np.linspace(0, duration, int(sample_rate * duration), False)
+class AdvancedSignalProcessor:
+    def __init__(self, sample_rate=22050):
+        """
+        Initialize advanced signal processor with enhanced capabilities
+        """
+        self.sample_rate = sample_rate
+        self.frequencies = self._create_frequency_mapping()
 
-    # Base frequencies for each letter
-    frequencies = {
-        'A': 220, 'B': 240, 'C': 260, 'D': 280, 'E': 300,
-        'F': 320, 'G': 340, 'H': 360, 'I': 380, 'J': 400,
-        'K': 420, 'L': 440, 'M': 460, 'N': 480, 'O': 500,
-        'P': 520, 'Q': 540, 'R': 560, 'S': 580, 'T': 600,
-        'U': 620, 'V': 640, 'W': 660, 'X': 680, 'Y': 700, 'Z': 720
-    }
+    def _create_frequency_mapping(self):
+        """
+        Create a more sophisticated frequency mapping for letters
+        """
+        # Expanded frequency mapping with harmonic considerations
+        return {
+            'A': (220, 440, 660),   # Fundamental, 2nd, 3rd harmonics
+            'B': (247, 494, 741),
+            'C': (262, 524, 786),
+            'D': (294, 588, 882),
+            'E': (330, 660, 990),
+            'F': (349, 698, 1047),
+            'G': (392, 784, 1176),
+            'H': (440, 880, 1320),
+            'I': (494, 988, 1482),
+            'J': (523, 1046, 1569),
+            'K': (587, 1174, 1761),
+            'L': (659, 1318, 1977),
+            'M': (698, 1396, 2094),
+            'N': (784, 1568, 2352),
+            'O': (880, 1760, 2640),
+            'P': (988, 1976, 2964),
+            'Q': (1047, 2094, 3141),
+            'R': (1175, 2350, 3525),
+            'S': (1319, 2638, 3957),
+            'T': (1397, 2794, 4191),
+            'U': (1568, 3136, 4704),
+            'V': (1760, 3520, 5280),
+            'W': (1976, 3952, 5928),
+            'X': (2093, 4186, 6279),
+            'Y': (2349, 4698, 7047),
+            'Z': (2637, 5274, 7911)
+        }
 
-    # Get frequency for the letter (uppercase)
-    freq = frequencies.get(letter.upper(), 0) # Default to 0Hz (silence) if not a letter
+    def generate_signal(self, letter):
+        """
+        Generate an advanced signal for a single letter
+        """
+        duration = 0.5  # Half a second per letter
+        t = np.linspace(0, duration, int(self.sample_rate * duration), False)
 
-    # If frequency is 0 (not a standard letter), generate silence
-    if freq == 0:
-        signal_data = np.zeros(int(sample_rate * duration))
-    else:
-        # Generate signal with some complexity
-        signal_data = np.sin(2 * np.pi * freq * t)
-        signal_data += 0.5 * np.sin(2 * np.pi * (freq * 2) * t) # Add a harmonic
+        # Get frequency tuple for the letter
+        freq_tuple = self.frequencies.get(letter.upper(), (0, 0, 0))
 
-        # Apply envelope (Hanning window) to smooth transitions
+        # If no frequency found, generate silence
+        if freq_tuple[0] == 0:
+            return np.zeros(int(self.sample_rate * duration)), self.sample_rate
+
+        # Generate complex signal with multiple harmonics
+        signal_data = np.zeros_like(t)
+        for i, freq in enumerate(freq_tuple):
+            # Reduce amplitude for higher harmonics
+            amplitude = 1.0 / (i + 1)
+            signal_data += amplitude * np.sin(2 * np.pi * freq * t)
+
+        # Apply sophisticated envelope (Hann window as a fallback)
         envelope = np.hanning(len(signal_data))
-        signal_data = signal_data * envelope
+        signal_data *= envelope
 
-    return signal_data, sample_rate
+        # Normalize and add slight noise
+        signal_data = signal_data / np.max(np.abs(signal_data))
+        signal_data += 0.05 * np.random.normal(0, 0.1, len(signal_data))
 
-def generate_word_signal(word):
-    """
-    Generates a concatenated signal for a given word by joining letter signals.
-    Filters out non-alphabetic characters.
-    Returns the full word signal and the sample rate.
-    """
-    word_signal_parts = []
-    sample_rate = 4410 # Default, will be confirmed by generate_signal
-    valid_letters = 0
+        return signal_data, self.sample_rate
 
-    for letter in word:
-        if 'A' <= letter.upper() <= 'Z':
-            signal_part, sr = generate_signal(letter.upper())
-            word_signal_parts.append(signal_part)
-            sample_rate = sr # Ensure consistent sample rate
-            valid_letters += 1
+    def generate_word_signal(self, word):
+        """
+        Generate a comprehensive signal for a complete word
+        """
+        word_signal_parts = []
+        pause_duration = 0.1  # Short pause between letters
 
-    if not word_signal_parts:
-        # print(f"Warning: No valid alphabetic characters found in the input word: '{word}'.") # Less verbose
-        return np.array([]), sample_rate # Return empty signal
+        # Filter and process only alphabetic characters
+        valid_letters = [letter.upper() for letter in word if letter.upper() in self.frequencies]
 
-    # Concatenate all parts
-    full_word_signal = np.concatenate(word_signal_parts)
-    return full_word_signal, sample_rate
+        if not valid_letters:
+            return np.array([]), self.sample_rate
 
-# --- >>> NEW: Feature Extraction using MFCC <<< ---
-def compute_mfcc_features(signal_data, sample_rate, n_mfcc=13, n_fft=512, hop_length=256):
-    """
-    Compute mean MFCC features for a given signal.
-    Returns a 1D numpy array (the mean MFCC vector).
-    """
-    if signal_data is None or signal_data.size == 0:
-        return None
+        for letter in valid_letters:
+            # Generate letter signal
+            letter_signal = self.generate_signal(letter)[0]
+            word_signal_parts.append(letter_signal)
+            
+            # Add short pause between letters
+            pause = np.zeros(int(self.sample_rate * pause_duration))
+            word_signal_parts.append(pause)
 
-    # Ensure signal is float32
-    signal_data = signal_data.astype(np.float32)
+        # Concatenate all parts
+        full_word_signal = np.concatenate(word_signal_parts)
+        return full_word_signal, self.sample_rate
 
-    # Check for NaN/Inf before processing
-    if np.any(np.isnan(signal_data)) or np.any(np.isinf(signal_data)):
-        print(f"Warning: Signal contains NaN or Inf values before MFCC. Length={len(signal_data)}. Returning None.")
-        return None
+    def extract_comprehensive_features(self, signal_data):
+        """
+        Extract advanced, multi-dimensional features
+        """
+        if signal_data.size == 0:
+            return None
 
-    try:
-        # Compute MFCCs (returns shape: [n_mfcc, n_frames])
-        mfccs = librosa.feature.mfcc(y=signal_data, sr=sample_rate, n_mfcc=n_mfcc,
-                                     n_fft=n_fft, hop_length=hop_length)
+        features = {}
 
-        # Check for NaN/Inf *after* MFCC computation (can happen with silent frames etc.)
-        if not np.all(np.isfinite(mfccs)):
-             print(f"Warning: MFCC computation resulted in non-finite values. Signal length={len(signal_data)}. Returning None.")
-             return None
+        try:
+            # Time domain features
+            features['zero_crossings'] = np.sum(librosa.zero_crossings(signal_data))
+            features['rms_energy'] = librosa.feature.rms(y=signal_data)[0][0]
+            
+            # Spectral features
+            spectral_centroid = librosa.feature.spectral_centroid(y=signal_data, sr=self.sample_rate)[0][0]
+            spectral_bandwidth = librosa.feature.spectral_bandwidth(y=signal_data, sr=self.sample_rate)[0][0]
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=signal_data, sr=self.sample_rate)[0][0]
+            
+            features['spectral_centroid'] = spectral_centroid
+            features['spectral_bandwidth'] = spectral_bandwidth
+            features['spectral_rolloff'] = spectral_rolloff
+            
+            # MFCC features
+            mfccs = librosa.feature.mfcc(y=signal_data, sr=self.sample_rate, n_mfcc=20)
+            features['mfcc_mean'] = np.mean(mfccs, axis=1)
+            features['mfcc_std'] = np.std(mfccs, axis=1)
+            
+            # Chroma features
+            chroma = librosa.feature.chroma_stft(y=signal_data, sr=self.sample_rate)
+            features['chroma_mean'] = np.mean(chroma, axis=1)
+            
+            # Tonnetz (tonal centroid) features
+            tonnetz = librosa.feature.tonnetz(y=signal_data, sr=self.sample_rate)
+            features['tonnetz_mean'] = np.mean(tonnetz, axis=1)
 
-        # Compute the mean of coefficients across frames (axis=1)
-        # Results in a single vector of shape [n_mfcc]
-        mean_mfccs = np.mean(mfccs, axis=1)
+        except Exception as e:
+            print(f"Feature extraction error: {e}")
+            return None
 
-        return mean_mfccs
+        return features
 
-    except Exception as e:
-        print(f"Error computing MFCC: {e}")
-        print("Signal stats: len={}, min={:.2f}, max={:.2f}, mean={:.2f}".format(
-            len(signal_data), np.min(signal_data), np.max(signal_data), np.mean(signal_data)
-        ))
-        return None
+    def categorize_words(self, words, num_clusters=10, clustering_method='kmeans'):
+        """
+        Categorize words using advanced feature extraction and clustering
+        """
+        # Prepare feature matrix
+        features_matrix = []
+        word_labels = []
 
-# --- >>> UPDATED: Main Categorization Logic using MFCC <<< ---
-def categorize_words(words_to_process, n_mfcc=13, num_clusters=5):
-    """
-    Generates signals, computes MEAN MFCC features, clusters them, and returns groups.
-    """
-    audio_features = {}
-    word_list_for_clustering = [] # Keep track of words corresponding to feature vectors
-    feature_dimension = n_mfcc # Expected dimension of the feature vector
+        # Extract features for words
+        for word in words:
+            word_signal, _ = self.generate_word_signal(word)
+            features = self.extract_comprehensive_features(word_signal)
+            
+            if features is None:
+                continue
 
-    print(f"Processing {len(words_to_process)} words...")
+            # Flatten features into a single vector
+            feature_vector = []
+            for key, value in features.items():
+                if isinstance(value, np.ndarray):
+                    feature_vector.extend(value)
+                else:
+                    feature_vector.append(value)
+            
+            features_matrix.append(feature_vector)
+            word_labels.append(word)
 
-    processed_count = 0
-    for i, word in enumerate(words_to_process):
-        word_signal, sample_rate = generate_word_signal(word)
+        # Convert to numpy array
+        features_matrix = np.array(features_matrix)
 
-        if word_signal.size == 0:
-            # print(f"Skipping '{word}' due to no valid signal.") # Less verbose
-            continue
+        # Scale features
+        scaler = StandardScaler()
+        scaled_features = scaler.fit_transform(features_matrix)
 
-        # Compute MFCC features
-        # Pass sample_rate which is needed for MFCC calculation
-        mfcc_coeffs = compute_mfcc_features(word_signal, sample_rate, n_mfcc=n_mfcc)
+        # Dimensionality reduction
+        pca = PCA(n_components=min(10, scaled_features.shape[1]))
+        reduced_features = pca.fit_transform(scaled_features)
 
-        # Check if features were computed successfully and have the correct dimension
-        if mfcc_coeffs is not None and mfcc_coeffs.size == feature_dimension :
-            audio_features[word] = mfcc_coeffs
-            word_list_for_clustering.append(word)
-        # else:
-            # print(f"Skipping '{word}' due to MFCC computation failure.") # Less verbose
+        # Clustering
+        if clustering_method == 'kmeans':
+            # Find optimal number of clusters
+            best_score = -1
+            best_n_clusters = 2
+            max_clusters = min(num_clusters, len(word_labels))
 
-        processed_count += 1
-        if (processed_count % 100 == 0): # Print progress update every 100 words
-             print(f"  Processed {processed_count}/{len(words_to_process)} words...")
+            for n_clusters in range(2, max_clusters + 1):
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                labels = kmeans.fit_predict(reduced_features)
+                
+                try:
+                    score = silhouette_score(reduced_features, labels)
+                    if score > best_score:
+                        best_score = score
+                        best_n_clusters = n_clusters
+                except:
+                    continue
 
+            # Final clustering
+            kmeans = KMeans(n_clusters=best_n_clusters, random_state=42, n_init=10)
+            final_labels = kmeans.fit_predict(reduced_features)
+            
+            # Organize results
+            word_groups = {}
+            for word, label in zip(word_labels, final_labels):
+                if label not in word_groups:
+                    word_groups[label] = []
+                word_groups[label].append(word)
 
-    if not audio_features:
-        print("No valid audio features could be computed for any word. Cannot categorize.")
-        return {}
+            return word_groups, best_n_clusters
 
-    print(f"\nSuccessfully computed MFCC features for {len(audio_features)} words.")
+        elif clustering_method == 'dbscan':
+            # DBSCAN clustering
+            dbscan = DBSCAN(eps=0.5, min_samples=3)
+            labels = dbscan.fit_predict(reduced_features)
+            
+            # Organize results
+            word_groups = {}
+            for word, label in zip(word_labels, labels):
+                if label != -1:  # Ignore noise points
+                    if label not in word_groups:
+                        word_groups[label] = []
+                    word_groups[label].append(word)
 
-    # --- Prepare data for clustering ---
-    # Create a matrix where each row is a mean MFCC feature vector
-    feature_matrix = np.array([audio_features[word] for word in word_list_for_clustering])
+            return word_groups, len(set(labels) - {-1})
 
-    # Scale features (Recommended for K-Means, especially with MFCCs)
-    print("Scaling features...")
-    scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(feature_matrix)
-
-    # --- Perform Clustering ---
-    actual_num_clusters = min(num_clusters, len(word_list_for_clustering))
-    if actual_num_clusters < 2:
-         print(f"Only {len(word_list_for_clustering)} words with features, cannot form multiple clusters.")
-         if len(word_list_for_clustering) == 1:
-             return {0: word_list_for_clustering}
-         else:
-             return {}
-
-    print(f"\nClustering features into {actual_num_clusters} groups using K-Means...")
-    kmeans = KMeans(n_clusters=actual_num_clusters, random_state=42, n_init=10)
-    kmeans.fit(scaled_features)
-
-    # Get cluster assignments
-    labels = kmeans.labels_
-
-    # --- Group words based on clusters ---
-    word_groups = {}
-    for i, word in enumerate(word_list_for_clustering):
-        cluster_label = labels[i]
-        if cluster_label not in word_groups:
-            word_groups[cluster_label] = []
-        word_groups[cluster_label].append(word)
-
-    print("Clustering complete.")
-    return word_groups
-
-# --- >>> UPDATED: Main function with word sampling <<< ---
 def main():
     """
-    Main function to define words (sampling from file), run categorization, and save groups.
+    Main function for word signal categorization
     """
+    # Input file setup
     input_word_file = "words_alpha.txt"
-    # --- >>> Limit the number of words processed <<< ---
-    # Set to None to process all words (can be VERY slow and memory intensive)
-    max_words_to_process = 1000  # Example: Process a sample of 1000 words
+    max_words_to_process = 500  # Increased sample size
+    output_filename = "advanced_word_categories.txt"
 
-    print(f"Reading words from '{input_word_file}'...")
+    # Read words
     try:
         with open(input_word_file, 'r', encoding='utf-8') as file:
-            all_words = [word.strip() for word in file.readlines() if word.strip()] # Read lines, strip whitespace
-            all_words = [word.upper() for word in all_words if word.isalpha()] # Keep only alpha words, convert to upper
+            all_words = [word.strip().upper() for word in file.readlines() 
+                         if word.strip() and word.strip().isalpha()]
     except FileNotFoundError:
         print(f"Error: Input word file '{input_word_file}' not found.")
-        print("Please make sure 'words_alpha.txt' is in the same directory as the script.")
-        print("You can often find this file online (search 'words_alpha.txt dictionary').")
         sys.exit(1)
 
     if not all_words:
@@ -238,57 +279,41 @@ def main():
         print("Processing all words found in the file.")
         word_dictionary = all_words
 
-    # --- Parameters ---
-    num_mfcc_coeffs = 13 # Number of MFCCs to compute (standard value)
-    num_clusters = 10    # Desired number of groups (adjust as needed - maybe more needed for larger sample?)
-    output_filename = "word_categories_mfcc.txt" # Output filename changed
+    # Initialize processor
+    processor = AdvancedSignalProcessor()
 
-    # --- Perform categorization using MFCC features ---
-    categorized_groups = categorize_words(word_dictionary,
-                                          n_mfcc=num_mfcc_coeffs,
-                                          num_clusters=num_clusters)
-
-    # --- Output the results to Console (Optional) ---
-    # (Consider commenting out for large numbers of words/groups)
-    # print("\n--- Word Categories (Console Output) ---")
-    # if not categorized_groups:
-    #     print("No categories were formed.")
-    # else:
-    #     for cluster_id, words_in_group in sorted(categorized_groups.items()):
-    #         sorted_words = sorted(words_in_group)
-    #         # Limit printing if group is too large
-    #         display_limit = 20
-    #         words_display = ', '.join(sorted_words[:display_limit])
-    #         if len(sorted_words) > display_limit:
-    #             words_display += f", ... ({len(sorted_words) - display_limit} more)"
-    #         print(f"\nGroup {cluster_id + 1} ({len(words_in_group)} words):")
-    #         print(f"  {words_display}")
-
-
-    # --- Output the results to Text File ---
-    print(f"\nSaving categorized groups to '{output_filename}'...")
+    # Perform categorization
     try:
+        categorized_groups, num_clusters = processor.categorize_words(
+            word_dictionary, 
+            num_clusters=15,  # Maximum clusters to consider
+            clustering_method='kmeans'  # Can also use 'dbscan'
+        )
+
+        # Save results
+        print(f"\nSaving categorized groups to '{output_filename}'...")
         with open(output_filename, 'w', encoding='utf-8') as f:
-            f.write(f"--- Word Categories based on Mean MFCC (k={num_clusters}) ---\n")
+            f.write("--- Advanced Word Signal Categorization ---\n")
             f.write(f"Processed {len(word_dictionary)} words (sampled from {len(all_words)} total).\n")
-            f.write(f"Number of features (MFCCs): {num_mfcc_coeffs}\n")
+            f.write(f"Number of clusters: {num_clusters}\n\n")
 
-            if not categorized_groups:
-                f.write("\nNo categories were formed.\n")
-            else:
-                # Sort clusters by ID
-                for cluster_id, words_in_group in sorted(categorized_groups.items()):
-                    sorted_words = sorted(words_in_group)
-                    f.write(f"\nGroup {cluster_id + 1} ({len(words_in_group)} words):\n")
-                    # Write all words, perhaps line-wrapped for large groups
-                    f.write(f"  {', '.join(sorted_words)}\n") # Simple comma-separated for now
+            for cluster_id, words_in_group in sorted(categorized_groups.items()):
+                sorted_words = sorted(words_in_group)
+                f.write(f"Cluster {cluster_id + 1} ({len(words_in_group)} words):\n")
+                
+                # Write words with line wrapping
+                max_words_per_line = 10
+                for i in range(0, len(sorted_words), max_words_per_line):
+                    line_words = sorted_words[i:i+max_words_per_line]
+                    f.write(f"  {', '.join(line_words)}\n")
+                f.write("\n")
+
         print(f"Successfully saved categories to '{output_filename}'.")
-    except IOError as e:
-        print(f"\nError: Could not write to file '{output_filename}'.")
-        print(f"Reason: {e}")
 
-    print("\nCategorization finished.")
-
+    except Exception as e:
+        print(f"Categorization error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
