@@ -324,7 +324,7 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True, c
 def main():
     input_word_file = "words_alpha.txt"
     
-    if input("(u)ser input, (f)ile?") == "f":
+    if input("(u)ser input, (f)ile? ") == "f":
 
 
         with open(input("Enter filename: "), 'r', encoding='utf-8') as file:
