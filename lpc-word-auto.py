@@ -323,9 +323,15 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True, c
 # --- Main function ---
 def main():
     input_word_file = "words_alpha.txt"
+    
+    if input("(u)ser input, (f)ile?") == "f":
 
 
-    all_words = input("USER: ").upper().split()
+        with open(input("Enter filename: "), 'r', encoding='utf-8') as file:
+            all_words = file.read().upper().split()
+    else:
+
+        all_words = input("USER: ").upper().split()
     max_words_to_process = len(all_words) # Reduced for demonstration of LPC visualization
     print(f"Found {len(all_words)} alphabetic words.")
 
