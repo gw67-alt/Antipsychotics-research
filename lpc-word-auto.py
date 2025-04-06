@@ -323,7 +323,7 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True, c
 # --- Main function ---
 def main():
     input_word_file = "words_alpha.txt"
-    
+
 
     all_words = input("USER: ").upper().split()
     max_words_to_process = len(all_words) # Reduced for demonstration of LPC visualization
@@ -384,15 +384,17 @@ def main():
         print(f"\nError: Could not write to file '{output_filename}'.")
         print(f"Reason: {e}")
 
-    # --- Display only the LPC Spectra ---
-    num_plots = min(5, len(word_dictionary))
-    if word_dictionary:
-        fig, axes = plt.subplots(num_plots, 1, figsize=(10, 4 * num_plots))
-        if num_plots == 1:
-            axes = [axes] # Ensure axes is always a list for consistent indexing
+    # --- Display only the LPC Spectra in a grid ---
+    num_plots = len(word_dictionary)
+    if num_plots > 0:
+        # Calculate the number of rows and columns for the grid
+        cols = int(np.ceil(np.sqrt(num_plots)))
+        rows = int(np.ceil(num_plots / cols))
 
-        for i in range(num_plots):
-            word = word_dictionary[i]
+        fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
+        axes = np.ravel(axes) # Flatten the axes array for easy indexing
+
+        for i, word in enumerate(word_dictionary):
             signal_data, sample_rate, lpc_coeffs = audio_signals.get(word, (None, None, None))
             if lpc_coeffs is not None:
                 a_coeffs = np.concatenate(([1], lpc_coeffs))
@@ -408,6 +410,10 @@ def main():
             else:
                 axes[i].set_title(f"LPC coeffs not computed for: {word}")
                 axes[i].axis('off')
+
+        # Turn off any unused subplots
+        for j in range(num_plots, rows * cols):
+            fig.delaxes(axes[j])
 
         plt.suptitle("LPC Spectra of Selected Words", fontsize=16)
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
