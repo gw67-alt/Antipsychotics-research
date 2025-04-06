@@ -414,8 +414,8 @@ def main():
                 magnitudes_db = 20 * np.log10(np.abs(h) + 1e-9)
                 ax.plot(w, magnitudes_db)
                 ax.set_title(f"LPC Spectrum for: {word}", fontsize=11, pad=10)  # Added padding to plot titles
-                ax.set_xlabel('Frequency [Hz]', fontsize=9)
-                ax.set_ylabel('Magnitude [dB]', fontsize=9)
+                #ax.set_xlabel('Frequency [Hz]', fontsize=9)
+                #ax.set_ylabel('Magnitude [dB]', fontsize=9)
                 ax.grid(True, alpha=0.3)
                 ax.set_ylim(bottom=np.percentile(magnitudes_db, 1) - 10 if len(magnitudes_db)>0 else -80,
                             top=np.percentile(magnitudes_db, 99) + 10 if len(magnitudes_db)>0 else 40)
