@@ -385,6 +385,7 @@ def main():
         print(f"Reason: {e}")
 
     # --- Display only the LPC Spectra in a grid ---
+
     num_plots = len(word_dictionary)
     if num_plots > 0:
         # Calculate the number of rows and columns for the grid
@@ -392,14 +393,18 @@ def main():
         cols = int(np.ceil(np.sqrt(num_plots) * 0.75))  # Reduce columns to create taller layout
         rows = int(np.ceil(num_plots / cols))
         
-        # Create a figure with more height per plot
-        fig = plt.figure(figsize=(15, 7 * rows))  # Increased height per row
+        # Create a figure with more height per plot and extra space for the title
+        fig = plt.figure(figsize=(15, 7 * rows + 1))  # Added extra space for the title
         
-        # Adjust the spacing with emphasis on vertical spacing
-        plt.subplots_adjust(hspace=0.5, wspace=0.3)  # Significantly more vertical space
+        # Create main title with more space above the plots
+        plt.suptitle("LPC Spectra of Selected Words", fontsize=18, y=0.99)
+        
+        # Adjust the spacing with emphasis on vertical spacing and more space at the top
+        plt.subplots_adjust(hspace=0.5, wspace=0.3, top=0.92)  # Reduced top value to create more space below title
         
         for i, word in enumerate(word_dictionary):
             # Create subplot at specific position
+            # Add 1 to the row position to leave space for the title
             ax = fig.add_subplot(rows, cols, i+1)
             
             signal_data, sample_rate, lpc_coeffs = audio_signals.get(word, (None, None, None))
@@ -408,7 +413,7 @@ def main():
                 w, h = signal.freqz(1, a_coeffs, worN=4096, fs=sample_rate)
                 magnitudes_db = 20 * np.log10(np.abs(h) + 1e-9)
                 ax.plot(w, magnitudes_db)
-                ax.set_title(f"LPC Spectrum for: {word}", fontsize=11)
+                ax.set_title(f"LPC Spectrum for: {word}", fontsize=11, pad=10)  # Added padding to plot titles
                 ax.set_xlabel('Frequency [Hz]', fontsize=9)
                 ax.set_ylabel('Magnitude [dB]', fontsize=9)
                 ax.grid(True, alpha=0.3)
@@ -422,12 +427,14 @@ def main():
 
         # Turn off any unused subplots
         for j in range(num_plots, rows * cols):
-            fig.delaxes(plt.subplot(rows, cols, j+1))
-
-        plt.suptitle("LPC Spectra of Selected Words", fontsize=16, y=0.98)
-        # Don't use tight_layout as it will override our manual spacing settings
-        # Instead, provide more top margin for the suptitle
-        plt.subplots_adjust(top=0.95)
+            try:
+                fig.delaxes(plt.subplot(rows, cols, j+1))
+            except:
+                pass  # In case the subplot doesn't exist
+        
+        # Add a thin line below the title to separate it from the plots
+        fig.text(0.5, 0.94, '_'*100, ha='center', fontsize=8, color='gray')
+        
         plt.show()
     else:
         print("No words were processed, so no LPC spectra to display.")
