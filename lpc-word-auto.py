@@ -15,23 +15,77 @@ except ImportError:
 try:
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
 except ImportError:
     print("Error: scikit-learn library not found.")
     print("Please install it using: pip install scikit-learn")
     sys.exit(1)
 
+# --- Provided LPC Functions ---
+def compute_lpc_coefficients(signal_data, order=16):
+    """
+    Compute LPC coefficients using librosa's implementation.
+    Returns coefficients a[1] through a[p].
+    """
+    if len(signal_data) <= order:
+        print(f"Warning: Signal length ({len(signal_data)}) is too short for LPC order ({order}). Returning zeros.")
+        return np.zeros(order)
+
+    # Normalize signal amplitude (optional but often helpful)
+    # signal_data = signal_data / np.max(np.abs(signal_data) + 1e-9)
+
+    # Compute LPC coefficients using librosa
+    try:
+        # librosa.lpc returns the coefficients including a_0.
+        lpc_coeffs_full = librosa.lpc(signal_data.astype(np.float32), order=order)
+        # Return only a_1 to a_order.
+        return lpc_coeffs_full[1:]
+    except Exception as e:
+        # Common errors include signal being too short or containing NaNs/Infs
+        print(f"Error computing LPC: {e}")
+        print("Signal stats: len={}, min={:.2f}, max={:.2f}, mean={:.2f}".format(
+            len(signal_data), np.min(signal_data), np.max(signal_data), np.mean(signal_data)
+        ))
+        # Check for NaNs or Infs which can cause errors
+        if np.any(np.isnan(signal_data)) or np.any(np.isinf(signal_data)):
+            print("Signal contains NaN or Inf values.")
+        return np.zeros(order) # Return zeros or handle error appropriately
+
+def visualize_word_lpc(word, lpc_coeffs, sample_rate, lpc_order):
+    """
+    Visualize the magnitude spectrum derived from LPC coefficients for a word.
+    """
+    if lpc_coeffs is None or len(lpc_coeffs) != lpc_order:
+        print("Cannot visualize: Invalid LPC coefficients provided.")
+        return
+
+    plt.figure(figsize=(10, 6))
+
+    # Construct the full denominator polynomial A(z) coefficients [1, a_1, ..., a_p]
+    a_coeffs = np.concatenate(([1], lpc_coeffs))
+
+    # Compute frequency response of the LPC filter H(z) = 1 / A(z)
+    w, h = signal.freqz(1, a_coeffs, worN=4096, fs=sample_rate) # Use fs for Hz axis
+
+    # Compute magnitude spectrum in dB
+    magnitudes_db = 20 * np.log10(np.abs(h) + 1e-9) # Add epsilon for stability
+
+    # Plot
+    plt.plot(w, magnitudes_db)
+    plt.title(f"LPC Spectrum for '{word}' (Order {lpc_order})")
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Magnitude [dB]')
+    plt.grid(True)
+    plt.ylim(bottom=np.percentile(magnitudes_db, 1) - 10 if len(magnitudes_db)>0 else -80,
+            top=np.percentile(magnitudes_db, 99) + 10 if len(magnitudes_db)>0 else 40) # Dynamic Y limits
+    plt.tight_layout()
+    plt.show()
+
 # --- Signal Generation Functions (Unchanged) ---
 def generate_signal(letter):
-    """
-    Generate a basic signal for a single letter.
-    Returns the signal data and the sample rate used.
-    """
-    # Basic parameters
-    sample_rate = 4410  # Reduced sample rate
-    duration = 0.5  # Half a second per letter
+    sample_rate = 4410
+    duration = 0.5
     t = np.linspace(0, duration, int(sample_rate * duration), False)
-
-    # Base frequencies for each letter
     frequencies = {
         'A': 220, 'B': 240, 'C': 260, 'D': 280, 'E': 300,
         'F': 320, 'G': 340, 'H': 360, 'I': 380, 'J': 400,
@@ -39,82 +93,46 @@ def generate_signal(letter):
         'P': 520, 'Q': 540, 'R': 560, 'S': 580, 'T': 600,
         'U': 620, 'V': 640, 'W': 660, 'X': 680, 'Y': 700, 'Z': 720
     }
-
-    # Get frequency for the letter (uppercase)
-    freq = frequencies.get(letter.upper(), 0) # Default to 0Hz (silence) if not a letter
-
-    # If frequency is 0 (not a standard letter), generate silence
+    freq = frequencies.get(letter.upper(), 0)
     if freq == 0:
         signal_data = np.zeros(int(sample_rate * duration))
     else:
-        # Generate signal with some complexity
         signal_data = np.sin(2 * np.pi * freq * t)
-        signal_data += 0.5 * np.sin(2 * np.pi * (freq * 2) * t) # Add a harmonic
-
-        # Apply envelope (Hanning window) to smooth transitions
+        signal_data += 0.5 * np.sin(2 * np.pi * (freq * 2) * t)
         envelope = np.hanning(len(signal_data))
         signal_data = signal_data * envelope
-
     return signal_data, sample_rate
 
 def generate_word_signal(word):
-    """
-    Generates a concatenated signal for a given word by joining letter signals.
-    Filters out non-alphabetic characters.
-    Returns the full word signal and the sample rate.
-    """
     word_signal_parts = []
-    sample_rate = 4410 # Default, will be confirmed by generate_signal
-    valid_letters = 0
-
+    sample_rate = 4410
     for letter in word:
         if 'A' <= letter.upper() <= 'Z':
             signal_part, sr = generate_signal(letter.upper())
             word_signal_parts.append(signal_part)
-            sample_rate = sr # Ensure consistent sample rate
-            valid_letters += 1
-
+            sample_rate = sr
     if not word_signal_parts:
-        return np.array([]), sample_rate # Return empty signal
-
-    # Concatenate all parts
+        return np.array([]), sample_rate
     full_word_signal = np.concatenate(word_signal_parts)
     return full_word_signal, sample_rate
 
 # --- ENHANCED: Feature Extraction Function for 8 Groups ---
 def extract_signal_features(signal_data, sample_rate):
-    """
-    Extract a comprehensive set of features for more detailed signal categorization.
-    """
     if signal_data is None or signal_data.size == 0:
         return None
-
-    # Ensure signal is normalized
     signal_data = signal_data / (np.max(np.abs(signal_data)) + 1e-10)
-
-    # --- 1. Peak Analysis Features ---
-    # Find peaks with different height thresholds to capture different peak types
-    peaks_high, _ = signal.find_peaks(np.abs(signal_data), height=0.5)  # High peaks
-    peaks_med, _ = signal.find_peaks(np.abs(signal_data), height=0.3)   # Medium peaks
-    peaks_low, _ = signal.find_peaks(np.abs(signal_data), height=0.1)   # Low peaks
-    
-    # Peak counts at different heights
+    peaks_high, _ = signal.find_peaks(np.abs(signal_data), height=0.5)
+    peaks_med, _ = signal.find_peaks(np.abs(signal_data), height=0.3)
+    peaks_low, _ = signal.find_peaks(np.abs(signal_data), height=0.1)
     peak_count_high = len(peaks_high)
     peak_count_med = len(peaks_med)
     peak_count_low = len(peaks_low)
-    
-    # Peak density (peaks per time unit)
     signal_duration = len(signal_data) / sample_rate
     peak_density = peak_count_med / signal_duration if signal_duration > 0 else 0
-    
-    # If we have peaks, calculate width features
     if peak_count_med > 0:
-        # Calculate peak widths at different heights
         widths_50 = signal.peak_widths(np.abs(signal_data), peaks_med, rel_height=0.5)[0]
         widths_25 = signal.peak_widths(np.abs(signal_data), peaks_med, rel_height=0.75)[0]
         widths_75 = signal.peak_widths(np.abs(signal_data), peaks_med, rel_height=0.25)[0]
-        
-        # Peak width statistics
         mean_width = np.mean(widths_50)
         width_std = np.std(widths_50) if len(widths_50) > 1 else 0
         width_ratio = np.mean(widths_25 / widths_75) if len(widths_75) > 0 and np.all(widths_75 > 0) else 1.0
@@ -122,124 +140,69 @@ def extract_signal_features(signal_data, sample_rate):
         mean_width = 0
         width_std = 0
         width_ratio = 1.0
-    
-    # --- 2. Spectral Features ---
     try:
-        # Spectral centroid (brightness)
         spectral_centroid = librosa.feature.spectral_centroid(y=signal_data, sr=sample_rate)[0].mean()
-        
-        # Spectral bandwidth
         spectral_bandwidth = librosa.feature.spectral_bandwidth(y=signal_data, sr=sample_rate)[0].mean()
-        
-        # Spectral flatness (tonal vs. noisy)
         spectral_flatness = librosa.feature.spectral_flatness(y=signal_data)[0].mean()
-        
-        # Spectral rolloff (frequency below which 85% of spectrum energy)
         spectral_rolloff = librosa.feature.spectral_rolloff(y=signal_data, sr=sample_rate)[0].mean()
     except Exception:
         spectral_centroid = 0
         spectral_bandwidth = 0
         spectral_flatness = 0
         spectral_rolloff = 0
-    
-    # --- 3. Waveform Shape Features ---
-    # Zero crossing rate
     zero_crossings = np.sum(np.abs(np.diff(np.signbit(signal_data).astype(int))))
     zero_crossing_rate = zero_crossings / len(signal_data)
-    
-    # RMS energy
     rms = np.sqrt(np.mean(signal_data**2))
-    
-    # Crest factor (peak to RMS ratio)
     crest_factor = np.max(np.abs(signal_data)) / (rms + 1e-10)
-    
-    # --- 4. Rhythm and Envelope Features ---
-    # Compute signal envelope
     envelope = np.abs(signal.hilbert(signal_data))
-    
-    # Envelope statistics
     env_mean = np.mean(envelope)
     env_std = np.std(envelope)
     env_max = np.max(envelope)
-    
-    # Envelope roughness (higher = more irregular)
     env_roughness = np.std(np.diff(envelope)) * 100
-    
-    # --- 5. Harmonic Features ---
     try:
-        # Harmonic-percussive separation
         harmonic, percussive = librosa.effects.hpss(signal_data)
         harmonic_ratio = np.sum(harmonic**2) / (np.sum(signal_data**2) + 1e-10)
         percussive_ratio = np.sum(percussive**2) / (np.sum(signal_data**2) + 1e-10)
     except Exception:
         harmonic_ratio = 0.5
         percussive_ratio = 0.5
-    
-    # Combine all features into one vector
     features = np.array([
-        # Peak features
         peak_count_high,
-        peak_count_med / max(1, peak_count_low),  # Ratio of medium to low peaks
+        peak_count_med / max(1, peak_count_low),
         peak_density,
         mean_width,
         width_std,
         width_ratio,
-        
-        # Spectral features
         spectral_centroid,
         spectral_bandwidth,
         spectral_flatness,
         spectral_rolloff,
-        
-        # Waveform features
         zero_crossing_rate,
         rms,
         crest_factor,
-        
-        # Envelope features
         env_mean,
-        env_std / (env_mean + 1e-10),  # Coefficient of variation of envelope
+        env_std / (env_mean + 1e-10),
         env_roughness,
-        
-        # Harmonic features
         harmonic_ratio,
         percussive_ratio
     ])
-    
     return features
 
 def compute_mfcc_features(signal_data, sample_rate, n_mfcc=13, n_fft=512, hop_length=256):
-    """
-    Compute mean MFCC features for a given signal.
-    Returns a 1D numpy array (the mean MFCC vector).
-    """
     if signal_data is None or signal_data.size == 0:
         return None
-
-    # Ensure signal is float32
     signal_data = signal_data.astype(np.float32)
-
-    # Check for NaN/Inf before processing
     if np.any(np.isnan(signal_data)) or np.any(np.isinf(signal_data)):
         print(f"Warning: Signal contains NaN or Inf values before MFCC. Length={len(signal_data)}. Returning None.")
         return None
-
     try:
-        # Compute MFCCs (returns shape: [n_mfcc, n_frames])
         mfccs = librosa.feature.mfcc(y=signal_data, sr=sample_rate, n_mfcc=n_mfcc,
-                                     n_fft=n_fft, hop_length=hop_length)
-
-        # Check for NaN/Inf *after* MFCC computation (can happen with silent frames etc.)
+                                            n_fft=n_fft, hop_length=hop_length)
         if not np.all(np.isfinite(mfccs)):
-             print(f"Warning: MFCC computation resulted in non-finite values. Signal length={len(signal_data)}. Returning None.")
-             return None
-
-        # Compute the mean of coefficients across frames (axis=1)
-        # Results in a single vector of shape [n_mfcc]
+            print(f"Warning: MFCC computation resulted in non-finite values. Signal length={len(signal_data)}. Returning None.")
+            return None
         mean_mfccs = np.mean(mfccs, axis=1)
-
         return mean_mfccs
-
     except Exception as e:
         print(f"Error computing MFCC: {e}")
         print("Signal stats: len={}, min={:.2f}, max={:.2f}, mean={:.2f}".format(
@@ -248,23 +211,22 @@ def compute_mfcc_features(signal_data, sample_rate, n_mfcc=13, n_fft=512, hop_le
         return None
 
 # --- Updated Categorization Logic for 8 Groups ---
-def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True):
-    """
-    Generates signals, computes features, clusters them into 8 groups, and returns groups.
-    
-    Parameters:
-    - words_to_process: List of words to categorize
-    - num_clusters: Number of clusters to form (default 8)
-    - use_comprehensive: If True, use comprehensive signal features; if False, use MFCC features
-    """
+def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True, compute_lpc=False, lpc_order=16):
     audio_features = {}
     word_list_for_clustering = []
-    
+    audio_signals = {}
+
     print(f"Processing {len(words_to_process)} words using {'comprehensive' if use_comprehensive else 'MFCC'} features...")
+    if compute_lpc:
+        print(f"Also computing LPC coefficients (order {lpc_order})...")
 
     processed_count = 0
     for word in words_to_process:
         word_signal, sample_rate = generate_word_signal(word)
+        lpc_coefficients = None
+        if compute_lpc:
+            lpc_coefficients = compute_lpc_coefficients(word_signal, order=lpc_order)
+        audio_signals[word] = (word_signal, sample_rate, lpc_coefficients)
 
         if word_signal.size == 0:
             continue
@@ -282,11 +244,11 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True):
 
         processed_count += 1
         if (processed_count % 100 == 0):
-             print(f"  Processed {processed_count}/{len(words_to_process)} words...")
+            print(f"  Processed {processed_count}/{len(words_to_process)} words...")
 
     if not audio_features:
         print("No valid audio features could be computed for any word. Cannot categorize.")
-        return {}
+        return {}, {}, None, None, {}
 
     print(f"\nSuccessfully computed features for {len(audio_features)} words.")
 
@@ -302,7 +264,7 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True):
     actual_num_clusters = min(num_clusters, len(word_list_for_clustering))
     if actual_num_clusters < 2:
         print(f"Only {len(word_list_for_clustering)} words with features, cannot form multiple clusters.")
-        return {0: word_list_for_clustering} if len(word_list_for_clustering) == 1 else {}
+        return {0: word_list_for_clustering} if len(word_list_for_clustering) == 1 else {}, {}, scaled_features, np.zeros(len(word_list_for_clustering)) if len(word_list_for_clustering) == 1 else None, audio_signals
 
     print(f"\nClustering features into {actual_num_clusters} groups using K-Means...")
     kmeans = KMeans(n_clusters=actual_num_clusters, random_state=42, n_init=10)
@@ -320,27 +282,17 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True):
         word_groups[cluster_label].append(word)
 
     # --- Analyze key characteristics of each cluster ---
+    cluster_characteristics = {}
     if use_comprehensive:
-        # Get the cluster centers
         centers = kmeans.cluster_centers_
-        
-        # Map back to original feature space for interpretation
         centers_original = scaler.inverse_transform(centers)
-        
-        # Extract key characteristics for each cluster
-        cluster_characteristics = {}
-        
         for cluster_id in range(len(centers_original)):
             center = centers_original[cluster_id]
-            
-            # Extract key characteristics from the center vector
-            peak_width = center[3]  # mean_width
-            peak_count = center[1]  # peak count ratio
+            peak_width = center[3]
+            peak_count = center[1]
             spectral_flatness = center[8]
             harmonic_ratio = center[16]
             env_roughness = center[15]
-            
-            # Categorize peak width
             if peak_width < np.percentile(centers_original[:, 3], 25):
                 width_category = "very thin peaks"
             elif peak_width < np.percentile(centers_original[:, 3], 50):
@@ -349,40 +301,29 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True):
                 width_category = "thick peaks"
             else:
                 width_category = "very thick peaks"
-            
-            # Categorize harmonic content
             if harmonic_ratio > np.percentile(centers_original[:, 16], 75):
                 harmonic_category = "highly harmonic"
             elif harmonic_ratio > np.percentile(centers_original[:, 16], 50):
                 harmonic_category = "moderately harmonic"
             else:
                 harmonic_category = "less harmonic"
-            
-            # Combine characteristics
             characteristic = f"{width_category}, {harmonic_category}"
-            
-            # Add peak density if it's distinctive
             if peak_count > np.percentile(centers_original[:, 1], 75):
                 characteristic += ", many peaks"
             elif peak_count < np.percentile(centers_original[:, 1], 25):
                 characteristic += ", few peaks"
-                
-            # Add envelope roughness if it's distinctive
             if env_roughness > np.percentile(centers_original[:, 15], 75):
                 characteristic += ", rough envelope"
             elif env_roughness < np.percentile(centers_original[:, 15], 25):
                 characteristic += ", smooth envelope"
-                
             cluster_characteristics[cluster_id] = characteristic
-            
-        return word_groups, cluster_characteristics
-    
-    return word_groups
+
+    return word_groups, cluster_characteristics, scaled_features, labels, audio_signals
 
 # --- Main function ---
 def main():
     input_word_file = "words_alpha.txt"
-    max_words_to_process = 1000  # Limit sample size
+    max_words_to_process = 5  # Reduced for demonstration of LPC visualization
 
     print(f"Reading words from '{input_word_file}'...")
     try:
@@ -411,18 +352,20 @@ def main():
 
     # --- Parameters ---
     num_clusters = 8    # Classify into 8 groups
-    output_filename = "word_categories_8_groups.txt"
-    
-    # Use comprehensive feature set
+    output_filename = "word_categories_8_groups_with_lpc.txt"
+    lpc_order = 16
+
+    # Use comprehensive feature set and compute LPC
     use_comprehensive = True
+    compute_lpc = True
 
     # --- Perform categorization ---
-    result = categorize_words(word_dictionary, num_clusters=num_clusters, use_comprehensive=use_comprehensive)
-    
+    result = categorize_words(word_dictionary, num_clusters=num_clusters, use_comprehensive=use_comprehensive, compute_lpc=compute_lpc, lpc_order=lpc_order)
+
     if use_comprehensive:
-        categorized_groups, cluster_characteristics = result
+        categorized_groups, cluster_characteristics, scaled_features, labels, audio_signals = result
     else:
-        categorized_groups = result
+        categorized_groups, _, scaled_features, labels, audio_signals = result
         cluster_characteristics = {}
 
     # --- Output the results to Text File ---
@@ -436,17 +379,17 @@ def main():
                 f.write("\nNo categories were formed.\n")
             else:
                 # Sort clusters by size (largest first)
-                sorted_clusters = sorted(categorized_groups.items(), 
-                                        key=lambda x: len(x[1]), reverse=True)
-                
+                sorted_clusters = sorted(categorized_groups.items(),
+                                                key=lambda x: len(x[1]), reverse=True)
+
                 for cluster_id, words_in_group in sorted_clusters:
                     sorted_words = sorted(words_in_group)
-                    
+
                     # Include characteristics if available
                     characteristic = ""
                     if cluster_id in cluster_characteristics:
                         characteristic = f" - {cluster_characteristics[cluster_id]}"
-                    
+
                     f.write(f"\nGroup {cluster_id + 1}{characteristic} ({len(words_in_group)} words):\n")
                     f.write(f"  {', '.join(sorted_words)}\n")
         print(f"Successfully saved categories to '{output_filename}'.")
@@ -454,6 +397,36 @@ def main():
         print(f"\nError: Could not write to file '{output_filename}'.")
         print(f"Reason: {e}")
 
+    # --- Display only the LPC Spectra ---
+    num_plots = min(5, len(word_dictionary))
+    if word_dictionary:
+        fig, axes = plt.subplots(num_plots, 1, figsize=(10, 4 * num_plots))
+        if num_plots == 1:
+            axes = [axes] # Ensure axes is always a list for consistent indexing
+
+        for i in range(num_plots):
+            word = word_dictionary[i]
+            signal_data, sample_rate, lpc_coeffs = audio_signals.get(word, (None, None, None))
+            if lpc_coeffs is not None:
+                a_coeffs = np.concatenate(([1], lpc_coeffs))
+                w, h = signal.freqz(1, a_coeffs, worN=4096, fs=sample_rate)
+                magnitudes_db = 20 * np.log10(np.abs(h) + 1e-9)
+                axes[i].plot(w, magnitudes_db)
+                axes[i].set_title(f"LPC Spectrum for: {word} (Order {lpc_order})")
+                axes[i].set_xlabel('Frequency [Hz]')
+                axes[i].set_ylabel('Magnitude [dB]')
+                axes[i].grid(True)
+                axes[i].set_ylim(bottom=np.percentile(magnitudes_db, 1) - 10 if len(magnitudes_db)>0 else -80,
+                                    top=np.percentile(magnitudes_db, 99) + 10 if len(magnitudes_db)>0 else 40)
+            else:
+                axes[i].set_title(f"LPC coeffs not computed for: {word}")
+                axes[i].axis('off')
+
+        plt.suptitle("LPC Spectra of Selected Words", fontsize=16)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.show()
+    else:
+        print("No words were processed, so no LPC spectra to display.")
 
     print("\nCategorization finished.")
 
