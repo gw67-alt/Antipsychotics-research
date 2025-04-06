@@ -323,23 +323,10 @@ def categorize_words(words_to_process, num_clusters=8, use_comprehensive=True, c
 # --- Main function ---
 def main():
     input_word_file = "words_alpha.txt"
-    max_words_to_process = 5  # Reduced for demonstration of LPC visualization
+    
 
-    print(f"Reading words from '{input_word_file}'...")
-    try:
-        with open(input_word_file, 'r', encoding='utf-8') as file:
-            all_words = [word.strip() for word in file.readlines() if word.strip()]
-            all_words = [word.upper() for word in all_words if word.isalpha()]
-    except FileNotFoundError:
-        print(f"Error: Input word file '{input_word_file}' not found.")
-        print("Please make sure 'words_alpha.txt' is in the same directory as the script.")
-        print("You can often find this file online (search 'words_alpha.txt dictionary').")
-        sys.exit(1)
-
-    if not all_words:
-        print("Error: No valid words found in the input file.")
-        sys.exit(1)
-
+    all_words = input("USER: ").upper().split()
+    max_words_to_process = len(all_words) # Reduced for demonstration of LPC visualization
     print(f"Found {len(all_words)} alphabetic words.")
 
     # Select words to process
