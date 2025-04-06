@@ -413,7 +413,7 @@ def main():
                 w, h = signal.freqz(1, a_coeffs, worN=4096, fs=sample_rate)
                 magnitudes_db = 20 * np.log10(np.abs(h) + 1e-9)
                 ax.plot(w, magnitudes_db)
-                ax.set_title(f"LPC Spectrum for: {word}", fontsize=11, pad=10)  # Added padding to plot titles
+                ax.set_title(f"{word}", fontsize=11, pad=0)  # Added padding to plot titles
                 #ax.set_xlabel('Frequency [Hz]', fontsize=9)
                 #ax.set_ylabel('Magnitude [dB]', fontsize=9)
                 ax.grid(True, alpha=0.3)
