@@ -388,35 +388,46 @@ def main():
     num_plots = len(word_dictionary)
     if num_plots > 0:
         # Calculate the number of rows and columns for the grid
-        cols = int(np.ceil(np.sqrt(num_plots)))
+        # Use fewer columns to create a more vertically-oriented layout
+        cols = int(np.ceil(np.sqrt(num_plots) * 0.75))  # Reduce columns to create taller layout
         rows = int(np.ceil(num_plots / cols))
-
-        fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
-        axes = np.ravel(axes) # Flatten the axes array for easy indexing
-
+        
+        # Create a figure with more height per plot
+        fig = plt.figure(figsize=(15, 7 * rows))  # Increased height per row
+        
+        # Adjust the spacing with emphasis on vertical spacing
+        plt.subplots_adjust(hspace=0.5, wspace=0.3)  # Significantly more vertical space
+        
         for i, word in enumerate(word_dictionary):
+            # Create subplot at specific position
+            ax = fig.add_subplot(rows, cols, i+1)
+            
             signal_data, sample_rate, lpc_coeffs = audio_signals.get(word, (None, None, None))
             if lpc_coeffs is not None:
                 a_coeffs = np.concatenate(([1], lpc_coeffs))
                 w, h = signal.freqz(1, a_coeffs, worN=4096, fs=sample_rate)
                 magnitudes_db = 20 * np.log10(np.abs(h) + 1e-9)
-                axes[i].plot(w, magnitudes_db)
-                axes[i].set_title(f"LPC Spectrum for: {word} (Order {lpc_order})")
-                axes[i].set_xlabel('Frequency [Hz]')
-                axes[i].set_ylabel('Magnitude [dB]')
-                axes[i].grid(True)
-                axes[i].set_ylim(bottom=np.percentile(magnitudes_db, 1) - 10 if len(magnitudes_db)>0 else -80,
-                                    top=np.percentile(magnitudes_db, 99) + 10 if len(magnitudes_db)>0 else 40)
+                ax.plot(w, magnitudes_db)
+                ax.set_title(f"LPC Spectrum for: {word}", fontsize=11)
+                ax.set_xlabel('Frequency [Hz]', fontsize=9)
+                ax.set_ylabel('Magnitude [dB]', fontsize=9)
+                ax.grid(True, alpha=0.3)
+                ax.set_ylim(bottom=np.percentile(magnitudes_db, 1) - 10 if len(magnitudes_db)>0 else -80,
+                            top=np.percentile(magnitudes_db, 99) + 10 if len(magnitudes_db)>0 else 40)
+                # Make the y-axis labels more compact to save horizontal space
+                ax.tick_params(axis='both', which='major', labelsize=8)
             else:
-                axes[i].set_title(f"LPC coeffs not computed for: {word}")
-                axes[i].axis('off')
+                ax.set_title(f"LPC coeffs not computed for: {word}")
+                ax.axis('off')
 
         # Turn off any unused subplots
         for j in range(num_plots, rows * cols):
-            fig.delaxes(axes[j])
+            fig.delaxes(plt.subplot(rows, cols, j+1))
 
-        plt.suptitle("LPC Spectra of Selected Words", fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.suptitle("LPC Spectra of Selected Words", fontsize=16, y=0.98)
+        # Don't use tight_layout as it will override our manual spacing settings
+        # Instead, provide more top margin for the suptitle
+        plt.subplots_adjust(top=0.95)
         plt.show()
     else:
         print("No words were processed, so no LPC spectra to display.")
